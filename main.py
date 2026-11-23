@@ -14,8 +14,10 @@ runs on the same bars answer byte for byte the same):
   * History: keep every close seen so far (ints, price_scale 5).
   * Buy (flat only): at least 60 closes seen; the latest close is above
     every close of the previous 60 bars AND the 60-bar return is over
-    +30 bps; no buy in the last 60 bars of the 1440-bar window; at least
-    60 bars since the last sell. Spend all cash, one order.
+    +30 bps; the previous close must also have been a fresh 60-bar high,
+    so a single one-minute spike cannot trigger a buy; no buy in the
+    last 60 bars of the 1440-bar window; at least 60 bars since the
+    last sell. Spend all cash, one order.
   * Sell (holding only): the close falls 200 bps below the highest close
     since entry (trailing stop), or 150 bps below the entry fill price
     (hard stop). Sell the whole position, one order.
@@ -101,7 +103,7 @@ def on_batch(state, batch):
         return []
 
     # Flat: look for a confirmed fresh 60-bar high.
-    if len(closes) < LOOKBACK + 1:
+    if len(closes) < LOOKBACK + 2:
         return []
     if cooldown_left > 0:
         return []
@@ -112,6 +114,11 @@ def on_batch(state, batch):
         return []
     # 60-bar return over +30 bps (integer cross-multiplication).
     if close * 10000 <= closes[-LOOKBACK - 1] * (10000 + BUY_RETURN_BPS):
+        return []
+    # Two-bar confirmation: the previous close must also have been a
+    # fresh 60-bar high, so a single one-minute spike cannot buy.
+    prev_window = closes[-LOOKBACK - 2:-2]
+    if closes[-2] <= max(prev_window):
         return []
     if state.cash <= 0:
         return []
